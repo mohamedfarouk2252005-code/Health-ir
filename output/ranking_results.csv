@@ -1,0 +1,10 @@
+query,query_vector_length,document_id,similarity,rank
+patient,0.045757,d1,0.1142,1
+patient,0.045757,d5,0.0709,2
+patient,0.045757,d9,0.0490,3
+patient,0.045757,d4,0.0395,4
+patient,0.045757,d2,0.0275,5
+patient,0.045757,d6,0.0257,6
+patient,0.045757,d7,0.0228,7
+patient,0.045757,d8,0.0225,8
+patient,0.045757,d10,0.0185,9

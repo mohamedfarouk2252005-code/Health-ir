@@ -2,79 +2,54 @@ from pathlib import Path
 
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import StructType, StructField, StringType
-from pyspark.sql.functions import col, regexp_extract
 
-from src.config import DATA_DIR, DOCUMENT_IDS
+from src.utils import natural_key
 
 
-def load_documents(spark: SparkSession) -> DataFrame:
+def load_documents(spark: SparkSession, folder) -> DataFrame:
     """
-    Load the healthcare documents and return a Spark DataFrame.
+    Import every .txt file of the selected folder and return a
+    Spark DataFrame.
 
     Columns:
-        document_id: Document identifier (d1, d2, ..., d10)
-        text: Complete document content
+        document_id: file name without extension (d1, article_1, ...)
+        text: complete document content
+
+    Files are read with Python (this avoids Hadoop's native Windows
+    libraries, winutils.exe / hadoop.dll); everything after this point
+    - tokenization, positional index, TF, IDF, TF-IDF, normalization -
+    is processed by Spark.
     """
 
-    # Check dataset directory
-    if not DATA_DIR.exists():
-        raise FileNotFoundError(
-            f"Dataset directory not found: {DATA_DIR}"
-        )
+    folder = Path(folder).expanduser().resolve()
 
-    # Discover text files
-    files = list(DATA_DIR.glob("*.txt"))
+    if not folder.is_dir():
+        raise FileNotFoundError(f"Folder not found: {folder}")
 
-    # Extract document IDs
-    actual_ids = [file.stem for file in files]
+    files = sorted(
+        folder.glob("*.txt"),
+        key=lambda path: natural_key(path.stem)
+    )
 
-    # Validate document IDs
-    missing_ids = set(DOCUMENT_IDS) - set(actual_ids)
-    unexpected_ids = set(actual_ids) - set(DOCUMENT_IDS)
+    if not files:
+        raise ValueError(f"No .txt files found in: {folder}")
 
-    if missing_ids or unexpected_ids:
-        raise ValueError(
-            f"Missing documents: {sorted(missing_ids)}\n"
-            f"Unexpected documents: {sorted(unexpected_ids)}"
-        )
-
-    # Read documents using Python
     records = []
 
-    for file in sorted(
-        files,
-        key=lambda path: int(path.stem[1:])
-    ):
+    for file in files:
 
-        document_id = file.stem
-        text = file.read_text(encoding="utf-8").strip()
+        text = file.read_text(encoding="utf-8-sig").strip()
 
-        if not text:
-            raise ValueError(
-                f"Empty document found: {document_id}"
-            )
+        # Ignore empty files
+        if text:
+            records.append((file.stem, text))
 
-        records.append((document_id, text))
+    if not records:
+        raise ValueError(f"All .txt files in {folder} are empty.")
 
-    # Define Spark DataFrame schema
     schema = StructType([
         StructField("document_id", StringType(), False),
         StructField("text", StringType(), False)
     ])
 
-    # Create Spark DataFrame
-    documents_df = spark.createDataFrame(
-        records,
-        schema=schema
-    )
-
-    # Maintain numerical document ordering
-    documents_df = documents_df.orderBy(
-        regexp_extract(
-            col("document_id"),
-            r"(\d+)",
-            1
-        ).cast("int")
-    )
-
-    return documents_df
+    return spark.createDataFrame(records, schema=schema)

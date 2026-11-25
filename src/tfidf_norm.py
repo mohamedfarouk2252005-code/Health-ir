@@ -5,10 +5,9 @@ from pyspark.sql.functions import (
     sum as spark_sum,
     pow,
     first,
-    regexp_extract
+    when,
+    lit
 )
-
-from src.config import DOCUMENT_IDS
 
 
 def calculate_tfidf(
@@ -16,18 +15,13 @@ def calculate_tfidf(
     df_idf: DataFrame
 ) -> DataFrame:
     """
-    Calculate TF-IDF for every term in every document.
-
     TF-IDF = Weighted TF * IDF
     """
 
-    tfidf = (
+    return (
         weighted_tf
         .join(df_idf, on="term", how="inner")
-        .withColumn(
-            "tfidf",
-            col("weighted_tf") * col("idf")
-        )
+        .withColumn("tfidf", col("weighted_tf") * col("idf"))
         .select(
             "term",
             "document_id",
@@ -39,41 +33,21 @@ def calculate_tfidf(
         )
     )
 
-    return tfidf
 
-
-def calculate_document_lengths(
-    tfidf: DataFrame
-) -> DataFrame:
+def calculate_document_lengths(tfidf: DataFrame) -> DataFrame:
     """
-    Calculate the L2 vector length of every document.
-
-    Length(d) = sqrt(sum(TF-IDF(t,d)^2))
+    Length(d) = sqrt(sum(TF-IDF(t, d)^2))
     """
 
-    document_lengths = (
+    return (
         tfidf
         .groupBy("document_id")
         .agg(
             sqrt(
-                spark_sum(
-                    pow(col("tfidf"), 2)
-                )
+                spark_sum(pow(col("tfidf"), 2))
             ).alias("vector_length")
         )
-        .withColumn(
-            "document_number",
-            regexp_extract(
-                col("document_id"),
-                r"(\d+)",
-                1
-            ).cast("int")
-        )
-        .orderBy("document_number")
-        .drop("document_number")
     )
-
-    return document_lengths
 
 
 def normalize_tfidf(
@@ -81,21 +55,21 @@ def normalize_tfidf(
     document_lengths: DataFrame
 ) -> DataFrame:
     """
-    Normalize every TF-IDF weight.
-
     Normalized TF-IDF = TF-IDF / Document Vector Length
+
+    A document whose terms all appear in every document has
+    length 0 (every IDF is 0); its normalized weights are 0.
     """
 
-    normalized = (
+    return (
         tfidf
-        .join(
-            document_lengths,
-            on="document_id",
-            how="inner"
-        )
+        .join(document_lengths, on="document_id", how="inner")
         .withColumn(
             "normalized_tfidf",
-            col("tfidf") / col("vector_length")
+            when(
+                col("vector_length") > 0,
+                col("tfidf") / col("vector_length")
+            ).otherwise(lit(0.0))
         )
         .select(
             "term",
@@ -106,30 +80,24 @@ def normalize_tfidf(
         )
     )
 
-    return normalized
-
 
 def create_matrix(
     data: DataFrame,
-    value_column: str
+    value_column: str,
+    document_ids: list
 ) -> DataFrame:
     """
-    Convert long-format records into a term-document matrix.
+    Long format -> term-document matrix.
 
-    Rows = Terms
-    Columns = Documents
-    Missing values = 0
+    Rows = terms, columns = documents (in the given order),
+    missing values = 0.
     """
 
-    matrix = (
+    return (
         data
         .groupBy("term")
-        .pivot("document_id", DOCUMENT_IDS)
-        .agg(
-            first(col(value_column))
-        )
+        .pivot("document_id", document_ids)
+        .agg(first(col(value_column)))
         .na.fill(0)
         .orderBy("term")
     )
-
-    return matrix

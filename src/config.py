@@ -7,27 +7,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-DATA_DIR = PROJECT_ROOT / "data" / "healthcare"
+# Default dataset folder (the user can select another one at run time)
+DEFAULT_DATA_DIR = PROJECT_ROOT / "data" / "healthcare"
 
 OUTPUT_DIR = PROJECT_ROOT / "output"
-
-
-# =========================
-# DATASET CONFIGURATION
-# =========================
-
-NUM_DOCUMENTS = 10
-
-DOCUMENT_IDS = [
-    f"d{i}" for i in range(1, NUM_DOCUMENTS + 1)
-]
-
-
-# =========================
-# CALCULATION CONFIGURATION
-# =========================
-
-LOG_BASE = 10
 
 
 # =========================
